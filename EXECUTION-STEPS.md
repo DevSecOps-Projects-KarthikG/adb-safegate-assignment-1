@@ -331,7 +331,7 @@ kubectl exec <pod-name> -n hello-app -- env
 kubectl exec <pod-name> -n hello-app -- cat /app/app.py
 ```
 
-### Step 3.13 – Create Additional Resources (Interview Demos)
+### Step 3.13 – Create Additional Resources
 
 #### Create Nginx Pod (3 methods)
 
@@ -519,8 +519,7 @@ HIGH (Python app):  0  — flask==3.1.3 is clean
 Python layer:       0 CRITICAL, 0 HIGH
 ```
 
-**Interview answer for remaining HIGHs:**  
-> "All 6 HIGH findings are in debian base OS packages with `status: affected` — no fixed version exists upstream. The Python application layer is completely clean. Flask was upgraded from 3.0.3 to 3.1.3 to fix CVE-2026-27205. These OS findings are monitored and updated when patches release — standard production practice."
+Note: "All 6 HIGH findings are in debian base OS packages with `status: affected` — no fixed version exists upstream. The Python application layer is completely clean. Flask was upgraded from 3.0.3 to 3.1.3 to fix CVE-2026-27205. These OS findings are monitored and updated when patches release — standard production practice."
 
 ### Step 4.5 – Deploy to Kubernetes
 
@@ -743,9 +742,9 @@ git push origin main
 
 ---
 
-## PART 7 – FULL DEMO SEQUENCE (Interview Ready)
+## PART 7 – FULL DEMO SEQUENCE:
 
-Run these in order at interview start:
+Run these in order:
 
 ```bash
 # 1. Start k3s
