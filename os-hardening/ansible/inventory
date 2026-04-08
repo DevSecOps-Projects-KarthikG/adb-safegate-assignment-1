@@ -1,0 +1,17 @@
+# =============================================================================
+# Ansible Inventory – ADB SAFEGATE RHEL Servers
+# =============================================================================
+# Reference: https://docs.ansible.com/ansible/latest/inventory_guide/
+#
+# Usage:
+#   ansible-playbook -i inventory hardening.yml --check  (dry run)
+#   ansible-playbook -i inventory hardening.yml           (apply)
+# =============================================================================
+
+[rhel_servers]
+# Replace with actual server IPs or hostnames
+# rhel-server-01 ansible_host=192.168.1.10 ansible_user=karthik ansible_ssh_private_key_file=~/.ssh/id_rsa
+# rhel-server-02 ansible_host=192.168.1.11 ansible_user=karthik ansible_ssh_private_key_file=~/.ssh/id_rsa
+
+[rhel_servers:vars]
+ansible_python_interpreter=/usr/bin/python3

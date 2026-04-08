@@ -1,0 +1,259 @@
+---
+# =============================================================================
+# ADB SAFEGATE – RHEL 9 OS Hardening Ansible Playbook
+# =============================================================================
+# Standard   : CIS RHEL 9 Level 1 + Level 2
+# Target     : RHEL 9 servers (not tested on Ubuntu)
+# Reference  : https://github.com/ansible-lockdown/RHEL9-CIS
+#              https://www.cisecurity.org/benchmark/red_hat_linux
+#
+# Usage:
+#   Dry run : ansible-playbook -i inventory hardening.yml --check
+#   Apply   : ansible-playbook -i inventory hardening.yml
+# =============================================================================
+
+- name: RHEL 9 OS Hardening – CIS Benchmark Aligned
+  hosts: rhel_servers
+  become: true
+
+  tasks:
+
+    # ── Remove insecure packages ──────────────────────────────────────────────
+    - name: "1.1 | Remove insecure legacy packages"
+      ansible.builtin.package:
+        name:
+          - telnet
+          - rsh
+          - ypbind
+          - talk
+          - ntalk
+        state: absent
+      tags: [packages, cis_1_1]
+
+    # ── Disable unused filesystems ────────────────────────────────────────────
+    - name: "1.2 | Disable unused filesystems"
+      ansible.builtin.copy:
+        dest: /etc/modprobe.d/unused-filesystems.conf
+        content: |
+          install cramfs /bin/true
+          install freevxfs /bin/true
+          install jffs2 /bin/true
+          install hfs /bin/true
+          install hfsplus /bin/true
+          install udf /bin/true
+        owner: root
+        group: root
+        mode: '0644'
+      tags: [filesystem, cis_1_2]
+
+    # ── Disable unnecessary services ──────────────────────────────────────────
+    - name: "2.1 | Disable unnecessary services"
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+      loop:
+        - avahi-daemon
+        - cups
+        - rpcbind
+        - nfs-server
+        - vsftpd
+        - httpd
+        - samba
+        - squid
+      ignore_errors: true
+      tags: [services, cis_2_1]
+
+    # ── Kernel network security parameters ───────────────────────────────────
+    - name: "3.1 | Apply kernel network security parameters"
+      ansible.posix.sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value }}"
+        sysctl_file: /etc/sysctl.d/60-hardening.conf
+        reload: true
+        state: present
+      loop:
+        - { key: "net.ipv4.ip_forward", value: "0" }
+        - { key: "net.ipv4.conf.all.accept_redirects", value: "0" }
+        - { key: "net.ipv4.conf.default.accept_redirects", value: "0" }
+        - { key: "net.ipv4.conf.all.send_redirects", value: "0" }
+        - { key: "net.ipv4.tcp_syncookies", value: "1" }
+        - { key: "net.ipv4.conf.all.accept_source_route", value: "0" }
+        - { key: "net.ipv4.conf.all.log_martians", value: "1" }
+        - { key: "net.ipv6.conf.all.disable_ipv6", value: "1" }
+      tags: [network, cis_3_1]
+
+    # ── Enable firewalld ──────────────────────────────────────────────────────
+    # NOTE: RHEL uses firewalld – NOT ufw (ufw is Ubuntu only)
+    - name: "3.2 | Enable and configure firewalld"
+      ansible.builtin.systemd:
+        name: firewalld
+        state: started
+        enabled: true
+      tags: [network, firewall, cis_3_2]
+
+    - name: "3.3 | Set default firewall zone to drop"
+      ansible.builtin.command:
+        cmd: firewall-cmd --set-default-zone=drop
+      changed_when: true
+      tags: [network, firewall, cis_3_3]
+
+    - name: "3.4 | Allow SSH through firewall"
+      ansible.posix.firewalld:
+        service: ssh
+        zone: public
+        permanent: true
+        state: enabled
+        immediate: true
+      tags: [network, firewall, ssh]
+
+    # ── Disable unused network protocols ──────────────────────────────────────
+    - name: "3.5 | Disable unused network protocols"
+      ansible.builtin.copy:
+        dest: /etc/modprobe.d/unused-protocols.conf
+        content: |
+          install dccp /bin/true
+          install sctp /bin/true
+          install rds /bin/true
+          install tipc /bin/true
+        owner: root
+        group: root
+        mode: '0644'
+      tags: [network, cis_3_5]
+
+    # ── SSH hardening ─────────────────────────────────────────────────────────
+    - name: "4.1 | Harden SSH configuration"
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+        state: present
+        backup: true
+      loop:
+        - { regexp: '^#?Protocol', line: 'Protocol 2' }
+        - { regexp: '^#?PermitRootLogin', line: 'PermitRootLogin no' }
+        - { regexp: '^#?PasswordAuthentication', line: 'PasswordAuthentication no' }
+        - { regexp: '^#?PubkeyAuthentication', line: 'PubkeyAuthentication yes' }
+        - { regexp: '^#?MaxAuthTries', line: 'MaxAuthTries 4' }
+        - { regexp: '^#?LoginGraceTime', line: 'LoginGraceTime 60' }
+        - { regexp: '^#?IgnoreRhosts', line: 'IgnoreRhosts yes' }
+        - { regexp: '^#?HostbasedAuthentication', line: 'HostbasedAuthentication no' }
+        - { regexp: '^#?PermitEmptyPasswords', line: 'PermitEmptyPasswords no' }
+        - { regexp: '^#?X11Forwarding', line: 'X11Forwarding no' }
+        - { regexp: '^#?AllowTcpForwarding', line: 'AllowTcpForwarding no' }
+        - { regexp: '^#?ClientAliveInterval', line: 'ClientAliveInterval 300' }
+        - { regexp: '^#?ClientAliveCountMax', line: 'ClientAliveCountMax 0' }
+      notify: restart sshd
+      tags: [ssh, cis_4_1]
+
+    # ── Password quality ──────────────────────────────────────────────────────
+    - name: "5.1 | Configure password quality requirements"
+      ansible.builtin.copy:
+        dest: /etc/security/pwquality.conf
+        content: |
+          minlen = 14
+          dcredit = -1
+          ucredit = -1
+          lcredit = -1
+          ocredit = -1
+          maxrepeat = 3
+          maxsequence = 3
+        owner: root
+        group: root
+        mode: '0644'
+      tags: [access, cis_5_1]
+
+    # ── Sudo logging ──────────────────────────────────────────────────────────
+    - name: "5.2 | Configure sudo logging"
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/hardening
+        content: |
+          Defaults logfile="/var/log/sudo.log"
+          Defaults log_input, log_output
+          Defaults use_pty
+        owner: root
+        group: root
+        mode: '0440'
+        validate: 'visudo -cf %s'
+      tags: [access, sudo, cis_5_2]
+
+    # ── SELinux ───────────────────────────────────────────────────────────────
+    - name: "6.1 | Ensure SELinux is enforcing"
+      ansible.builtin.lineinfile:
+        path: /etc/selinux/config
+        regexp: '^SELINUX='
+        line: 'SELINUX=enforcing'
+      tags: [selinux, cis_6_1]
+
+    - name: "6.2 | Ensure SELinux type is targeted"
+      ansible.builtin.lineinfile:
+        path: /etc/selinux/config
+        regexp: '^SELINUXTYPE='
+        line: 'SELINUXTYPE=targeted'
+      tags: [selinux, cis_6_2]
+
+    # ── Enable auditd ─────────────────────────────────────────────────────────
+    - name: "7.1 | Install auditd"
+      ansible.builtin.package:
+        name: audit
+        state: present
+      tags: [audit, cis_7_1]
+
+    - name: "7.2 | Enable auditd service"
+      ansible.builtin.systemd:
+        name: auditd
+        state: started
+        enabled: true
+      tags: [audit, cis_7_2]
+
+    - name: "7.3 | Configure audit rules"
+      ansible.builtin.copy:
+        dest: /etc/audit/rules.d/hardening.rules
+        content: |
+          -w /etc/passwd -p wa -k identity
+          -w /etc/group -p wa -k identity
+          -w /etc/shadow -p wa -k identity
+          -w /etc/sudoers -p wa -k sudoers
+          -w /var/log/lastlog -p wa -k logins
+          -a always,exit -F path=/usr/bin/sudo -F perm=x -F auid>=1000 -F auid!=4294967295 -k privileged
+          -a always,exit -F arch=b64 -S connect -k network_connect
+          -a always,exit -F arch=b64 -S unlink -S unlinkat -F auid>=1000 -k delete
+          -e 2
+        owner: root
+        group: root
+        mode: '0640'
+      notify: restart auditd
+      tags: [audit, cis_7_3]
+
+    # ── Patch management ──────────────────────────────────────────────────────
+    - name: "8.1 | Apply all system updates"
+      ansible.builtin.dnf:
+        name: "*"
+        state: latest
+        update_cache: true
+      tags: [patching, cis_8_1]
+
+    - name: "8.2 | Install dnf-automatic"
+      ansible.builtin.package:
+        name: dnf-automatic
+        state: present
+      tags: [patching, cis_8_2]
+
+    - name: "8.3 | Enable automatic security updates"
+      ansible.builtin.systemd:
+        name: dnf-automatic.timer
+        state: started
+        enabled: true
+      tags: [patching, cis_8_3]
+
+  # ── Handlers ─────────────────────────────────────────────────────────────────
+  handlers:
+    - name: restart sshd
+      ansible.builtin.systemd:
+        name: sshd
+        state: restarted
+
+    - name: restart auditd
+      ansible.builtin.systemd:
+        name: auditd
+        state: restarted

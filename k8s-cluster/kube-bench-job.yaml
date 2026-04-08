@@ -1,0 +1,47 @@
+# =============================================================================
+# kube-bench – CIS Kubernetes Benchmark Scanner
+# =============================================================================
+# Validates cluster configuration against CIS Kubernetes benchmarks.
+# Reference: https://github.com/aquasecurity/kube-bench
+#
+# Apply  : kubectl apply -f kube-bench-job.yaml
+# Logs   : kubectl logs job/kube-bench
+# =============================================================================
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kube-bench
+spec:
+  template:
+    spec:
+      hostPID: true
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: kube-bench
+          image: aquasec/kube-bench:latest
+          command: ["kube-bench"]
+          volumeMounts:
+            - name: var-lib-rancher
+              mountPath: /var/lib/rancher
+              readOnly: true
+            - name: etc-rancher
+              mountPath: /etc/rancher
+              readOnly: true
+            - name: proc
+              mountPath: /proc
+              readOnly: true
+      restartPolicy: Never
+      volumes:
+        - name: var-lib-rancher
+          hostPath:
+            path: /var/lib/rancher
+        - name: etc-rancher
+          hostPath:
+            path: /etc/rancher
+        - name: proc
+          hostPath:
+            path: /proc
